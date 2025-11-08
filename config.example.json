@@ -1,0 +1,12 @@
+{
+  "token": "YOUR_BOT_TOKEN_HERE",
+  "webhook_url": "YOUR_WEBHOOK_URL_HERE",
+  "muted_role_name": "Muted",
+  "response_triggers": {
+    "cześć": "Witaj! 👋",
+    "hello": "Hello! 👋",
+    "siema": "Siema! 😊",
+    "pomocy": "Jak mogę pomóc? 🤔",
+    "help": "How can I help you? 🤔"
+  }
+}
