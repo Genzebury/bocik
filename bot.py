@@ -6,6 +6,7 @@ import os
 import aiohttp
 from datetime import datetime
 from typing import Optional
+import unicodedata
 
 # Load configuration
 def load_config():
@@ -34,7 +35,9 @@ class BocikBot(commands.Bot):
             command_prefix='!',  # Fallback prefix, we'll use slash commands mainly
             intents=intents
         )
-        self.dm_log_file = 'dm_logs.json'
+        # Folder where per-user message logs will be stored
+        self.messages_folder = os.path.join(os.path.dirname(__file__), 'Messages')
+        os.makedirs(self.messages_folder, exist_ok=True)
         
     async def setup_hook(self):
         """This is called when the bot is starting up"""
@@ -87,17 +90,21 @@ class BocikBot(commands.Bot):
 
     def save_dm_log(self, dm_data):
         """Save DM to JSON file"""
+        # Save messages per user in Messages/<user_id>.json
+        user_id = dm_data.get('author_id') or dm_data.get('author')
+        user_file = os.path.join(self.messages_folder, f"{user_id}.json")
+
         logs = []
-        if os.path.exists(self.dm_log_file):
+        if os.path.exists(user_file):
             try:
-                with open(self.dm_log_file, 'r', encoding='utf-8') as f:
+                with open(user_file, 'r', encoding='utf-8') as f:
                     logs = json.load(f)
             except json.JSONDecodeError:
                 logs = []
-        
+
         logs.append(dm_data)
-        
-        with open(self.dm_log_file, 'w', encoding='utf-8') as f:
+
+        with open(user_file, 'w', encoding='utf-8') as f:
             json.dump(logs, f, indent=2, ensure_ascii=False)
 
     async def send_dm_webhook(self, message):
@@ -131,18 +138,25 @@ class BocikBot(commands.Bot):
                         inline=False
                     )
                 
-                await webhook.send(embed=embed, username="Bocik DM Logger")
+                await webhook.send(embed=embed, username="Czarnuch od wiadomosci")
                 print(f"Sent DM webhook for message from {message.author}")
         except Exception as e:
             print(f"Error sending webhook: {e}")
 
+    @staticmethod
+    def normalize_text(s: str) -> str:
+        """Usuń diakrytykę i zamień na małe litery (np. 'cześć' -> 'czesc')."""
+        if not s:
+            return ""
+        normalized = unicodedata.normalize('NFKD', s)
+        return ''.join(ch for ch in normalized if not unicodedata.combining(ch)).lower()
     async def check_response_triggers(self, message):
-        """Check if message contains any trigger words and respond"""
+        """Check if message contains any trigger words and respond (diacritics ignored)"""
         response_triggers = config.get('response_triggers', {})
-        content_lower = message.content.lower()
+        content_norm = self.normalize_text(message.content or "")
         
         for trigger, response in response_triggers.items():
-            if trigger.lower() in content_lower:
+            if self.normalize_text(trigger) in content_norm:
                 await message.channel.send(response)
                 break  # Only respond once per message
 
@@ -248,6 +262,85 @@ async def mute(
 @mute.error
 async def mute_error(interaction: discord.Interaction, error):
     """Handle errors for the mute command"""
+    if isinstance(error, app_commands.errors.MissingPermissions):
+        await interaction.response.send_message(
+            "❌ Nie masz uprawnień do używania tej komendy!",
+            ephemeral=True
+        )
+
+@bot.tree.command(name="unmute", description="Odcisz użytkownika usuwając rolę Muted")
+@app_commands.describe(
+    user="Użytkownik do odciszenia",
+    reason="Powód (opcjonalny)"
+)
+@app_commands.checks.has_permissions(manage_roles=True)
+async def unmute(
+    interaction: discord.Interaction,
+    user: discord.Member,
+    reason: Optional[str] = "Nie podano powodu"
+):
+    """Unmute a user by removing the Muted role"""
+    # Sprawdź uprawnienia bota
+    if not interaction.guild.me.guild_permissions.manage_roles:
+        await interaction.response.send_message(
+            "❌ Nie mam uprawnień do zarządzania rolami!",
+            ephemeral=True
+        )
+        return
+
+    muted_role_name = config.get('muted_role_name', 'Muted')
+    muted_role = discord.utils.get(interaction.guild.roles, name=muted_role_name)
+
+    if not muted_role:
+        await interaction.response.send_message(
+            f"⚠️ Nie znaleziono roli {muted_role_name} na tym serwerze.",
+            ephemeral=True
+        )
+        return
+
+    if muted_role not in user.roles:
+        await interaction.response.send_message(
+            f"⚠️ {user.mention} nie ma roli {muted_role.name}.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        await user.remove_roles(muted_role, reason=reason)
+
+        embed = discord.Embed(
+            title="🔊 Użytkownik odciszony",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Użytkownik", value=user.mention, inline=True)
+        embed.add_field(name="Moderator", value=interaction.user.mention, inline=True)
+        embed.add_field(name="Powód", value=reason, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+        # Powiadom użytkownika DM, jeśli możliwe
+        try:
+            await user.send(
+                f"Odejmuję Ci rolę **{muted_role.name}** na serwerze **{interaction.guild.name}**.\nPowód: {reason}"
+            )
+        except discord.Forbidden:
+            pass
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ Nie mam uprawnień do zdjęcia tej roli!",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Wystąpił błąd: {str(e)}",
+            ephemeral=True
+        )
+
+@unmute.error
+async def unmute_error(interaction: discord.Interaction, error):
+    """Handle errors for the unmute command"""
     if isinstance(error, app_commands.errors.MissingPermissions):
         await interaction.response.send_message(
             "❌ Nie masz uprawnień do używania tej komendy!",
