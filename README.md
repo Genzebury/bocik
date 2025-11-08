@@ -28,11 +28,18 @@ pip install -r requirements.txt
 ```
 
 3. Utwórz plik konfiguracyjny:
-```bash
-cp config.example.json config.json
-```
 
-4. Edytuj `config.json` i uzupełnij wymagane dane:
+   **Opcja A: Użyj interaktywnego kreatora (zalecane)**
+   ```bash
+   python setup.py
+   ```
+
+   **Opcja B: Ręcznie skopiuj i edytuj**
+   ```bash
+   cp config.example.json config.json
+   ```
+   
+   Następnie edytuj `config.json` i uzupełnij wymagane dane:
    - `token` - Token bota Discord (z Discord Developer Portal)
    - `webhook_url` - URL webhooka do przesyłania logów DM (opcjonalne)
    - `muted_role_name` - Nazwa roli dla wyciszonych użytkowników (domyślnie "Muted")
@@ -109,6 +116,8 @@ Gdy użytkownik wyśle wiadomość prywatną do bota:
 ```
 bocik/
 ├── bot.py                    # Główny plik bota
+├── setup.py                  # Interaktywny kreator konfiguracji
+├── test_bot.py               # Testy
 ├── config.json               # Konfiguracja (nie commitować!)
 ├── config.example.json       # Przykładowa konfiguracja
 ├── requirements.txt          # Zależności Python
