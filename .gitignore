@@ -40,3 +40,4 @@ dm_logs.json
 # OS
 .DS_Store
 Thumbs.db
+/Messages
